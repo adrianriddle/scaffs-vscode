@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import { Scaffolder, TemplateOptionsData, ScaffoldConfig } from 'scaffs';
+import { Scaffolder, TemplateOptionsData, ScaffoldConfig } from '@adrianriddle/scaffs';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
