@@ -4,46 +4,46 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import { Scaffolder, TemplateOptionsData, ScaffoldConfig } from '@adrianriddle/scaffs';
+import { Scaffolder, TemplateOptionsData, ScaffoldConfig, ScaffoldOpenDialogOptions } from '@adrianriddle/scaffs';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 
-    let disposable = vscode.commands.registerCommand('extension.scaffold', async fileInfo => {
+	let disposable = vscode.commands.registerCommand('extension.scaffold', async fileInfo => {
 
-        const projectPath = vscode.workspace.rootPath;
-        const creationPath = getClosestDirectory(fileInfo.fsPath || fileInfo.path);
+		const projectPath = vscode.workspace.rootPath;
+		const creationPath = getClosestDirectory(fileInfo.fsPath || fileInfo.path);
 
-        if(!creationPath) {
-            vscode.window.showErrorMessage('Unable to find target directory.');
-            return;
-        }
+		if (!creationPath) {
+			vscode.window.showErrorMessage('Unable to find target directory.');
+			return;
+		}
 
-        try {
-            let scaffsConfig = await Scaffolder.loadScaffsConfig(projectPath);
+		try {
+			let scaffsConfig = await Scaffolder.loadScaffsConfig(projectPath);
 
-            let availableScaffNames: string[] = Object.keys(scaffsConfig.absoluteScaffPaths);
+			let availableScaffNames: string[] = Object.keys(scaffsConfig.absoluteScaffPaths);
 
-            let scaffoldName = await vscode.window.showQuickPick(availableScaffNames);
+			let scaffoldName = await vscode.window.showQuickPick(availableScaffNames);
 
-            // If the user hits escape or clicks out of the quick pick
-            if (!scaffoldName) {
-                return;
-            }
+			// If the user hits escape or clicks out of the quick pick
+			if (!scaffoldName) {
+				return;
+			}
 
-            let scaffoldConfig = await Scaffolder.loadScaffoldConfig(scaffsConfig, scaffoldName);
-            let templateOptions = { data: await getTemplateVariables(scaffoldConfig) }
+			let scaffoldConfig = await Scaffolder.loadScaffoldConfig(scaffsConfig, scaffoldName);
+			let templateOptions = { data: await getTemplateVariables(scaffoldConfig) }
 
-            await Scaffolder.scaffold(scaffsConfig, scaffoldName, creationPath, templateOptions);
-            
-        } catch (e) {
-            vscode.window.showErrorMessage(e);
-        }
+			await Scaffolder.scaffold(scaffsConfig, scaffoldName, creationPath, templateOptions);
 
-    });
+		} catch (e) {
+			vscode.window.showErrorMessage(e);
+		}
 
-    context.subscriptions.push(disposable);
+	});
+
+	context.subscriptions.push(disposable);
 }
 
 /**
@@ -52,28 +52,49 @@ export function activate(context: vscode.ExtensionContext) {
  * @param scaffoldConfig - scaffold config to get variabls for
  */
 function getTemplateVariables(scaffoldConfig: ScaffoldConfig): Promise<TemplateOptionsData> {
-    return new Promise(async (resolve, reject) => {
-        let variables = Scaffolder.getScaffoldVariables(scaffoldConfig);
-        let templateData: TemplateOptionsData = {};
+	return new Promise(async (resolve, reject) => {
+		let variables = Scaffolder.getScaffoldVariables(scaffoldConfig);
+		let templateData: TemplateOptionsData = {};
 
-        for (let i = 0, len = variables.length; i < len; i++) {
-            let variable = variables[i];
-            let inputOptions: vscode.InputBoxOptions = {
-                prompt: variable.prompt,
-                placeHolder: variable.name,
-                // validateInput: value => null
-            };
-            let value = await vscode.window.showInputBox(inputOptions);
+		for (let i = 0, len = variables.length; i < len; i++) {
+			let variable = variables[i];
+			const { name, prompt, optional, type } = variable;
+			let value;
+			
+			const workingType = typeof type === 'object' ? type.type : type;
+			const typeOptions = typeof type === 'object' ? type.options : {};
 
-            if (!variable.optional && (!value || !value.length)) {
-                reject(`${variable.name} is required.`);
-                return;
-            }
+			if (workingType === 'folder') {
+				vscode.window.showInformationMessage(`Select a value for: ${name}`);
+				const defaultOptions: ScaffoldOpenDialogOptions = { 
+					openLabel: `Select ${name}`,
+					defaultUri: vscode.Uri.file(vscode.workspace.rootPath),
+					canSelectFolders: true,
+				};
+				const dialogResponse = await vscode.window['showOpenDialog'](Object.assign(defaultOptions, typeOptions || {}));
+				if (dialogResponse && dialogResponse.length > 0) {
+					value = dialogResponse[0].fsPath;
+				}
+			}
+			else {
+				let inputOptions: vscode.InputBoxOptions = {
+					prompt: variable.prompt,
+					placeHolder: variable.name,
+					// validateInput: value => null
+				};
+				value = await vscode.window.showInputBox(inputOptions);
+			}
+			
 
-            templateData[variable.name] = value;
-        }
-        resolve(parseInputData(templateData));
-    });
+			if (!variable.optional && (!value || !value.length)) {
+				reject(`${variable.name} is required.`);
+				return;
+			}
+
+			templateData[variable.name] = value;
+		}
+		resolve(parseInputData(templateData));
+	});
 }
 
 /**
@@ -83,12 +104,12 @@ function getTemplateVariables(scaffoldConfig: ScaffoldConfig): Promise<TemplateO
  * @param filePath - path to file to check
  */
 function getClosestDirectory(filePath: string): string | null {
-    try {
-        let isDirectory = fs.statSync(filePath).isDirectory();
-        return isDirectory ? filePath : path.resolve(filePath, '..');
-    } catch (e) {
-        return null;
-    }
+	try {
+		let isDirectory = fs.statSync(filePath).isDirectory();
+		return isDirectory ? filePath : path.resolve(filePath, '..');
+	} catch (e) {
+		return null;
+	}
 }
 
 /**
@@ -97,19 +118,19 @@ function getClosestDirectory(filePath: string): string | null {
  * @param data - input data object
  */
 function parseInputData(data: any): Object {
-    const JSON_STRING_REGEXP = /^[\[|\{].*[\]|\}]$/;
-    if (typeof data === 'object') {
-        let output: any = Array.isArray(data) ? [] : {};
-        for (let key in data) {
-            if (data.hasOwnProperty(key)) {
-                output[key] = parseInputData(data[key]);
-            }
-        }
-        return output;
-    } else if (typeof data === 'string' && data.match(JSON_STRING_REGEXP)) {
-        try {
-            return JSON.parse(data);
-        } catch (e) { }
-    }
-    return data;
+	const JSON_STRING_REGEXP = /^[\[|\{].*[\]|\}]$/;
+	if (typeof data === 'object') {
+		let output: any = Array.isArray(data) ? [] : {};
+		for (let key in data) {
+			if (data.hasOwnProperty(key)) {
+				output[key] = parseInputData(data[key]);
+			}
+		}
+		return output;
+	} else if (typeof data === 'string' && data.match(JSON_STRING_REGEXP)) {
+		try {
+			return JSON.parse(data);
+		} catch (e) { }
+	}
+	return data;
 }
